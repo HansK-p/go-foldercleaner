@@ -24,16 +24,13 @@ func GetFolderCleaner(logger *log.Entry, ctx context.Context, wg *sync.WaitGroup
 	tasks := []*FolderCleanerTask{}
 
 	for idx := range config.Tasks {
-		task := &config.Tasks[idx]
-		logger := logger.WithFields(log.Fields{"CleanerTask": task})
+		taskConfig := &config.Tasks[idx]
+		logger := logger.WithFields(log.Fields{"CleanerTask": taskConfig})
 
-		if cleanerTask, err := GetFolderCleanerTask(logger, ctx, wg, task); err != nil {
-			logger.Errorf("When scheduling cleaner task: %s", err)
+		if task, err := GetFolderCleanerTask(logger, ctx, wg, taskConfig); err != nil {
+			logger.Errorf("When getting cleaner task: %s", err)
 		} else {
-			if err := cleanerTask.Schedule(); err != nil {
-				logger.Errorf("When scheduling the cleaner: %s", err)
-			}
-			logger.Infof("Cleaner task scheduled")
+			tasks = append(tasks, task)
 		}
 	}
 
