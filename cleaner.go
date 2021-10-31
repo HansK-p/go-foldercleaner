@@ -9,7 +9,7 @@ import (
 )
 
 type Configuration struct {
-	Jobs []CfgCleanerJob `yaml:"jobs"`
+	Tasks []CfgCleanerTask `yaml:"tasks"`
 }
 
 type FolderCleaner struct {
@@ -17,32 +17,32 @@ type FolderCleaner struct {
 	ctx    context.Context
 	wg     *sync.WaitGroup
 	config *Configuration
-	jobs   []*FolderCleanerJob
+	tasks  []*FolderCleanerTask
 }
 
 func GetFolderCleaner(logger *log.Entry, ctx context.Context, wg *sync.WaitGroup, config *Configuration) (*FolderCleaner, error) {
-	jobs := []*FolderCleanerJob{}
+	tasks := []*FolderCleanerTask{}
 
-	for idx := range config.Jobs {
-		job := &config.Jobs[idx]
-		logger := logger.WithFields(log.Fields{"CleanerJob": job})
+	for idx := range config.Tasks {
+		task := &config.Tasks[idx]
+		logger := logger.WithFields(log.Fields{"CleanerTask": task})
 
-		if cleanerJob, err := GetFolderCleanerJob(logger, ctx, wg, job); err != nil {
-			logger.Errorf("When scheduling cleaner job: %s", err)
+		if cleanerTask, err := GetFolderCleanerTask(logger, ctx, wg, task); err != nil {
+			logger.Errorf("When scheduling cleaner task: %s", err)
 		} else {
-			if err := cleanerJob.Schedule(); err != nil {
+			if err := cleanerTask.Schedule(); err != nil {
 				logger.Errorf("When scheduling the cleaner: %s", err)
 			}
-			logger.Infof("Cleaner job scheduled")
+			logger.Infof("Cleaner task scheduled")
 		}
 	}
 
 	return &FolderCleaner{
-		logger: logger.WithFields(log.Fields{"Package": "cleaner", "Module": "FolderCleaner", "JobConfig": config}),
+		logger: logger.WithFields(log.Fields{"Package": "cleaner", "Module": "FolderCleaner", "TaskConfig": config}),
 		ctx:    ctx,
 		wg:     wg,
 		config: config,
-		jobs:   jobs,
+		tasks:  tasks,
 	}, nil
 }
 
@@ -50,12 +50,12 @@ func (fc *FolderCleaner) Schedule() error {
 	logger := fc.logger.WithFields(log.Fields{"Function": "Schedule"})
 	logger.Infof("Scheduling the folder cleaner")
 
-	for _, job := range fc.jobs {
-		logger := logger.WithFields(log.Fields{"CleanerJob": job})
-		if err := job.Schedule(); err != nil {
-			return fmt.Errorf("when scheduling job %#v: %s", *job, err)
+	for _, task := range fc.tasks {
+		logger := logger.WithFields(log.Fields{"CleanerTask": task})
+		if err := task.Schedule(); err != nil {
+			return fmt.Errorf("when scheduling task %#v: %s", *task, err)
 		}
-		logger.Info("Scheduled job")
+		logger.Info("Scheduled task")
 	}
 	return nil
 }
