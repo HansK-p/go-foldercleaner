@@ -3,7 +3,7 @@ package foldercleaner
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,10 +14,11 @@ import (
 )
 
 type CfgCleanerTask struct {
-	Path     string              `yaml:"path"`
-	Pattern  *customtypes.Regexp `yaml:"pattern,omitempty"`
-	TTL      time.Duration       `yaml:"ttl,omitempty"`
-	Interval time.Duration       `yaml:"interval,omitempty"`
+	Path      string              `yaml:"path"`
+	Pattern   *customtypes.Regexp `yaml:"pattern,omitempty"`
+	TTL       time.Duration       `yaml:"ttl"`
+	Interval  time.Duration       `yaml:"interval,omitempty"`
+	Recursive bool                `yaml:"recursive"`
 }
 
 type FolderCleanerTask struct {
@@ -42,27 +43,55 @@ func GetFolderCleanerTask(logger *log.Entry, ctx context.Context, wg *sync.WaitG
 	}, nil
 }
 
+func (fct *FolderCleanerTask) conditionalyRemove(fileInfo fs.FileInfo, path string) (bool, error) {
+	logger := fct.logger.WithFields(log.Fields{"Function": "conditionallyRemove", "Name": fileInfo.Name(), "Modified": fileInfo.ModTime()})
+	if fileInfo.Mode().IsRegular() && time.Since(fileInfo.ModTime()) > fct.config.TTL && (fct.config.Pattern == nil || fct.config.Pattern.Match([]byte(fileInfo.Name()))) {
+		logger.Infof("Deleting file as ttl was reached")
+		if err := os.Remove(path); err != nil {
+			return true, fmt.Errorf("when deleting file %s: %w", path, err)
+		}
+		return true, nil
+	}
+	return false, nil
+}
 func (fct *FolderCleanerTask) clean() error {
 	logger := fct.logger.WithFields(log.Fields{"Function": "clean"})
 	logger.Infof("Cleaning")
 
-	files, err := ioutil.ReadDir(fct.config.Path)
-	if err != nil {
-		return fmt.Errorf("when reading files in folder %s: %w", fct.config.Path, err)
-	}
-
-	for _, file := range files {
-		if file.Mode().IsRegular() && time.Since(file.ModTime()) > fct.config.TTL && (fct.config.Pattern == nil || fct.config.Pattern.Match([]byte(file.Name()))) {
-			logger := logger.WithFields(log.Fields{"Name": file.Name(), "Modified": file.ModTime()})
-			logger.Infof("Deleting file as ttl was reached")
-			path := filepath.Join(fct.config.Path, file.Name())
-			err = os.Remove(path)
-			if err != nil {
-				return fmt.Errorf("when deleting file %s: %w", path, err)
+	return filepath.WalkDir(fct.config.Path, func(path string, d fs.DirEntry, err error) error {
+		logger := logger.WithFields(log.Fields{"InnerFunction": "WalkDirFunc", "Path": path, "Error": err})
+		logger.Debugf("In WalkDir with DirEntry: %#v", d)
+		if err != nil {
+			return err
+		}
+		fileInfo, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("when running stat on %s: %w", path, err)
+		}
+		if fileInfo.IsDir() {
+			if fct.config.Recursive {
+				return nil // Traverse into the folder
+			} else if path == fct.config.Path {
+				return nil // Traverse into the folder
+			} else {
+				logger.Infof("Skip folder as the recursive flag isn't set")
+				return filepath.SkipDir
 			}
 		}
-	}
-	return nil
+		logger = logger.WithFields(log.Fields{"FileName": fileInfo.Name(), "Modified": fileInfo.ModTime()})
+		deleted, err := fct.conditionalyRemove(fileInfo, filepath.Join(fct.config.Path, fileInfo.Name()))
+		if err != nil {
+			if deleted {
+				return fmt.Errorf("error trying to delete the file: %w", err)
+			} else {
+				return fmt.Errorf("there was an error investigating the file: %w", err)
+			}
+		}
+		if deleted {
+			logger.Info("deleted the file")
+		}
+		return nil
+	})
 }
 
 func (fct *FolderCleanerTask) scheduleCleaner() {
