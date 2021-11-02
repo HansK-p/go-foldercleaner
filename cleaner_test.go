@@ -30,6 +30,7 @@ func TestCleaner(t *testing.T) {
 tasks:
   - path: /tmp/cleaner_test/folderA
     pattern: .*
+    recursive: true
     ttl: 1s
   - path: /tmp/cleaner_test/folderB
     ttl: 1m
@@ -87,6 +88,7 @@ tasks:
 	createFolders(t, []string{
 		"/tmp/cleaner_test",
 		"/tmp/cleaner_test/folderA",
+		"/tmp/cleaner_test/folderA/subfolderA",
 		"/tmp/cleaner_test/folderB",
 	})
 
@@ -97,6 +99,22 @@ tasks:
 	}
 	if ready, message := folderCleaner.IsReady(); !ready {
 		t.Errorf("The folder cleaner is not ready with message '%s' after all cleanup tasks have succeeded", message)
+	}
+
+	toBeDeletedPath := "/tmp/cleaner_test/folderA/subfolderA/tmpfile"
+	t.Logf("Create a file to be deleted: %s", toBeDeletedPath)
+	data := []byte("hello\ncleaner\n")
+	err = os.WriteFile(toBeDeletedPath, data, 0644)
+	if err != nil {
+		t.Fatalf("Unable to create test file '%s': %s", toBeDeletedPath, err)
+	}
+
+	t.Log("Wait at least the ttl")
+	time.Sleep(time.Millisecond * time.Duration(sleepTimeMS))
+
+	t.Log("Validate that the file has been deleted")
+	if _, err := os.Stat(toBeDeletedPath); !os.IsNotExist(err) {
+		t.Errorf("The file '%s' was not deleted by the scheduler", toBeDeletedPath)
 	}
 
 	t.Logf("Controlled stop of cleaner jobs")

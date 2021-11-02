@@ -79,7 +79,7 @@ func (fct *FolderCleanerTask) clean() error {
 			}
 		}
 		logger = logger.WithFields(log.Fields{"FileName": fileInfo.Name(), "Modified": fileInfo.ModTime()})
-		deleted, err := fct.conditionalyRemove(fileInfo, filepath.Join(fct.config.Path, fileInfo.Name()))
+		deleted, err := fct.conditionalyRemove(fileInfo, path)
 		if err != nil {
 			if deleted {
 				return fmt.Errorf("error trying to delete the file: %w", err)
