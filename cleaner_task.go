@@ -51,11 +51,12 @@ func NewFolderCleanerTask(logger *log.Entry, ctx context.Context, wg *sync.WaitG
 	}
 
 	promFilesRemoved.With(folderCleanerTask.labels)
+	promFileCleanFailures.With(folderCleanerTask.labels)
 	promFileRemoveFailures.With(folderCleanerTask.labels)
 	return
 }
 
-func (fct *FolderCleanerTask) conditionalyRemove(fileInfo fs.FileInfo, path string) (bool, error) {
+func (fct *FolderCleanerTask) conditionallyRemove(fileInfo fs.FileInfo, path string) (bool, error) {
 	logger := fct.logger.WithFields(log.Fields{"Function": "conditionallyRemove", "Name": fileInfo.Name(), "Modified": fileInfo.ModTime()})
 	if fileInfo.Mode().IsRegular() && time.Since(fileInfo.ModTime()) > fct.config.TTL && (fct.config.Pattern == nil || fct.config.Pattern.Match([]byte(fileInfo.Name()))) {
 		logger.Infof("Deleting file as ttl was reached")
@@ -93,7 +94,7 @@ func (fct *FolderCleanerTask) clean() error {
 			}
 		}
 		logger = logger.WithFields(log.Fields{"FileName": fileInfo.Name(), "Modified": fileInfo.ModTime()})
-		deleted, err := fct.conditionalyRemove(fileInfo, path)
+		deleted, err := fct.conditionallyRemove(fileInfo, path)
 		if err != nil {
 			if deleted {
 				return fmt.Errorf("error trying to delete the file: %w", err)
@@ -122,6 +123,7 @@ func (fct *FolderCleanerTask) scheduleCleaner() {
 		err := fct.clean()
 		if err != nil {
 			logger.Errorf("While cleaning folder: %s", err)
+			promFileCleanFailures.With(fct.labels).Add(1)
 			fct.setHealthStatus(false, "Error cleaning folder")
 		} else {
 			fct.setHealthStatus(true, "Folder cleaned")
