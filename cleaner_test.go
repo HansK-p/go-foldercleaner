@@ -50,7 +50,7 @@ tasks:
 	logger := log.New().WithFields(log.Fields{})
 	ctx, cancel := context.WithCancel(context.Background())
 	wg := &sync.WaitGroup{}
-	folderCleaner, err := GetFolderCleaner(logger, ctx, wg, &config)
+	folderCleaner, err := NewFolderCleaner(logger, ctx, wg, &config)
 	if err != nil {
 		t.Fatalf("Unable to get a the Folder Cleaner")
 	}

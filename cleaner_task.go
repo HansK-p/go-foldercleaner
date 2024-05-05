@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/HansK-p/go-customtypes"
+	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -27,20 +28,31 @@ type FolderCleanerTask struct {
 	wg     *sync.WaitGroup
 	config *CfgCleanerTask
 
+	labels prometheus.Labels
+
 	healthDescription string
 	isHealthy         bool
 }
 
-func GetFolderCleanerTask(logger *log.Entry, ctx context.Context, wg *sync.WaitGroup, config *CfgCleanerTask) (*FolderCleanerTask, error) {
-	return &FolderCleanerTask{
-		logger: logger.WithFields(log.Fields{"Package": "cleaner", "Module": "FolderCleanerTask", "TaskConfig": config}),
-		ctx:    ctx,
-		wg:     wg,
-		config: config,
-
+func NewFolderCleanerTask(logger *log.Entry, ctx context.Context, wg *sync.WaitGroup, config *CfgCleanerTask) (folderCleanerTask *FolderCleanerTask, err error) {
+	folderCleanerTask = &FolderCleanerTask{
+		logger:            logger.WithFields(log.Fields{"Package": "cleaner", "Module": "FolderCleanerTask", "TaskConfig": config}),
+		ctx:               ctx,
+		wg:                wg,
+		config:            config,
 		healthDescription: "Not yet started",
 		isHealthy:         false,
-	}, nil
+	}
+
+	if config.Pattern != nil {
+		folderCleanerTask.labels = prometheus.Labels{"path": config.Path, "pattern": config.Pattern.String()}
+	} else {
+		folderCleanerTask.labels = prometheus.Labels{"path": config.Path, "pattern": ""}
+	}
+
+	promFilesRemoved.With(folderCleanerTask.labels)
+	promFileRemoveFailures.With(folderCleanerTask.labels)
+	return
 }
 
 func (fct *FolderCleanerTask) conditionalyRemove(fileInfo fs.FileInfo, path string) (bool, error) {
@@ -48,8 +60,10 @@ func (fct *FolderCleanerTask) conditionalyRemove(fileInfo fs.FileInfo, path stri
 	if fileInfo.Mode().IsRegular() && time.Since(fileInfo.ModTime()) > fct.config.TTL && (fct.config.Pattern == nil || fct.config.Pattern.Match([]byte(fileInfo.Name()))) {
 		logger.Infof("Deleting file as ttl was reached")
 		if err := os.Remove(path); err != nil {
+			promFileRemoveFailures.With(fct.labels).Add(1)
 			return true, fmt.Errorf("when deleting file %s: %w", path, err)
 		}
+		promFilesRemoved.With(fct.labels).Add(1)
 		return true, nil
 	}
 	return false, nil
