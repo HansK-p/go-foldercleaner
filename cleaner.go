@@ -20,14 +20,14 @@ type FolderCleaner struct {
 	tasks  []*FolderCleanerTask
 }
 
-func GetFolderCleaner(logger *log.Entry, ctx context.Context, wg *sync.WaitGroup, config *Configuration) (*FolderCleaner, error) {
+func NewFolderCleaner(logger *log.Entry, ctx context.Context, wg *sync.WaitGroup, config *Configuration) (*FolderCleaner, error) {
 	tasks := []*FolderCleanerTask{}
 
 	for idx := range config.Tasks {
 		taskConfig := &config.Tasks[idx]
 		logger := logger.WithFields(log.Fields{"CleanerTask": taskConfig})
 
-		if task, err := GetFolderCleanerTask(logger, ctx, wg, taskConfig); err != nil {
+		if task, err := NewFolderCleanerTask(logger, ctx, wg, taskConfig); err != nil {
 			logger.Errorf("When getting cleaner task: %s", err)
 		} else {
 			tasks = append(tasks, task)
